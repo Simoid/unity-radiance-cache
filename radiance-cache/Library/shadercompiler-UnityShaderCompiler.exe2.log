@@ -1,0 +1,7 @@
+Base path: 'G:/Unity/Editor/2019.3.0f3/Editor/Data', plugins path 'G:/Unity/Editor/2019.3.0f3/Editor/Data/PlaybackEngines'
+Cmd: initializeCompiler
+Cmd: compileComputeKernel
+  error: 2 plat 4 at RayTracingShader.compute(69): undeclared identifier 'sphere'
+  api=4 insize=5048 outsize=0 ok=0
+Cmd: compileComputeKernel
+  api=4 insize=5093 outsize=5482 ok=1

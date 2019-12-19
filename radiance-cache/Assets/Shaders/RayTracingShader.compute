@@ -1,44 +1,176 @@
-﻿using UnityEngine;
+﻿#pragma kernel CSMain
 
-public class RayTracingMaster : MonoBehaviour
+RWTexture2D<float4> Result;
+float4x4 _CameraToWorld;
+float4x4 _CameraInverseProjection;
+Texture2D<float4> _SkyboxTexture;
+SamplerState sampler_SkyboxTexture;
+static const float PI = 3.14159265f;
+float2 _PixelOffset;
+float4 _DirectionalLight;
+
+struct Sphere
 {
-    public ComputeShader RayTracingShader;
+    float3 position;
+    float radius;
+    float3 albedo;
+    float3 specular;
+};
 
-    private RenderTexture _target;
+StructuredBuffer<Sphere> _Spheres;
 
-    private void OnRenderImage(RenderTexture source, RenderTexture destination)
+struct Ray
+{
+    float3 origin;
+    float3 direction;
+    float3 energy;
+};
+
+struct RayHit
+{
+    float3 position;
+    float distance;
+    float3 normal;
+    float3 albedo;
+    float3 specular;
+};
+
+
+
+
+
+RayHit CreateRayHit()
+{
+    RayHit hit;
+    hit.position = float3(0.0f, 0.0f, 0.0f);
+    hit.distance = 1.#INF;
+    hit.normal = float3(0.0f, 0.0f, 0.0f);
+    hit.albedo = float3(0.0f, 0.0f, 0.0f);
+    hit.specular = float3(0.0f, 0.0f, 0.0f);;
+    return hit;
+}
+
+Ray CreateRay(float3 origin, float3 direction)
+{
+    Ray ray;
+    ray.origin = origin;
+    ray.energy = float3(1.0f,1.0f,1.0f);
+    ray.direction = direction;
+    return ray;
+}
+
+void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
+{
+    // Calculate distance along the ray where the ground plane is intersected
+    float t = -ray.origin.y / ray.direction.y;
+    if (t > 0 && t < bestHit.distance)
     {
-        Render(destination);
+        bestHit.distance = t;
+        bestHit.position = ray.origin + t * ray.direction;
+        bestHit.normal = float3(0.0f, 1.0f, 0.0f);
+        bestHit.albedo = float3(0.5f, 0.5f, 0.5f);
+        bestHit.specular = float3(0.5f, 0.5f, 0.5f);
     }
+}
 
-    private void Render(RenderTexture destination)
+void IntersectSphere(Ray ray, inout RayHit bestHit, Sphere sphere)
+{
+    // Calculate distance along the ray where the sphere is intersected
+    float3 d = ray.origin - sphere.position;
+    float p1 = -dot(ray.direction, d);
+    float p2sqr = p1 * p1 - dot(d, d) + sphere.radius * sphere.radius;
+    if (p2sqr < 0)
+        return;
+    float p2 = sqrt(p2sqr);
+    float t = p1 - p2 > 0 ? p1 - p2 : p1 + p2;
+    if (t > 0 && t < bestHit.distance)
     {
-        // Make sure we have a current render target
-        InitRenderTexture();
-
-        // Set the target and dispatch the compute shader
-        RayTracingShader.SetTexture(0, "Result", _target);
-        int threadGroupsX = Mathf.CeilToInt(Screen.width / 8.0f);
-        int threadGroupsY = Mathf.CeilToInt(Screen.height / 8.0f);
-        RayTracingShader.Dispatch(0, threadGroupsX, threadGroupsY, 1);
-
-        // Blit the result texture to the screen
-        Graphics.Blit(_target, destination);
+        bestHit.distance = t;
+        bestHit.position = ray.origin + t * ray.direction;
+        bestHit.normal = normalize(bestHit.position - sphere.position);
+        bestHit.albedo = sphere.albedo;
+        bestHit.specular = sphere.specular;
     }
+}
 
-    private void InitRenderTexture()
+RayHit Trace(Ray ray)
+{
+    RayHit bestHit = CreateRayHit();
+    IntersectGroundPlane(ray, bestHit);
+    // Trace spheres
+    uint numSpheres, stride;
+    _Spheres.GetDimensions(numSpheres, stride);
+    for (uint i = 0; i < numSpheres; i++)
+        IntersectSphere(ray, bestHit, _Spheres[i]);
+    return bestHit;
+}
+
+Ray CreateCameraRay(float2 uv)
+{
+    // Transform the camera origin to world space
+    float3 origin = mul(_CameraToWorld, float4(0.0f, 0.0f, 0.0f, 1.0f)).xyz;
+    
+    // Invert the perspective projection of the view-space position
+    float3 direction = mul(_CameraInverseProjection, float4(uv, 0.0f, 1.0f)).xyz;
+    // Transform the direction from camera to world space and normalize
+    direction = mul(_CameraToWorld, float4(direction, 0.0f)).xyz;
+    direction = normalize(direction);
+
+    return CreateRay(origin, direction);
+}
+
+float3 Shade(inout Ray ray, RayHit hit)
+{
+    if (hit.distance < 1.#INF)
     {
-        if (_target == null || _target.width != Screen.width || _target.height != Screen.height)
+        float3 specular = hit.specular;
+        float3 albedo = hit.albedo;
+        // Reflect the ray and multiply energy with specular reflection
+        ray.origin = hit.position + hit.normal * 0.001f;
+        ray.direction = reflect(ray.direction, hit.normal);
+        ray.energy *= specular;
+        // Return a diffuse-shaded color
+        // Shadow test ray
+        bool shadow = false;
+        Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001f, -1 * _DirectionalLight.xyz);
+        RayHit shadowHit = Trace(shadowRay);
+        if (shadowHit.distance != 1.#INF)
         {
-            // Release render texture if we already have one
-            if (_target != null)
-                _target.Release();
-
-            // Get a render target for Ray Tracing
-            _target = new RenderTexture(Screen.width, Screen.height, 0,
-                RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
-            _target.enableRandomWrite = true;
-            _target.Create();
+            return float3(0.0f, 0.0f, 0.0f);
         }
+        return saturate(dot(hit.normal, _DirectionalLight.xyz) * -1) * _DirectionalLight.w * albedo;
     }
+    else
+    {
+        // Erase the ray's energy - the sky doesn't reflect anything
+        ray.energy = 0.0f;
+        // Sample the skybox and write it
+        float theta = acos(ray.direction.y) / -PI;
+        float phi = atan2(ray.direction.x, -ray.direction.z) / -PI * 0.5f;
+        return _SkyboxTexture.SampleLevel(sampler_SkyboxTexture, float2(phi, theta), 0).xyz;
+    }
+}
+
+[numthreads(8,8,1)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    // Get the dimensions of the RenderTexture
+    uint width, height;
+    Result.GetDimensions(width, height);
+
+    // Transform pixel to [-1,1] range
+    float2 uv = float2((id.xy + _PixelOffset) / float2(width, height) * 2.0f - 1.0f);
+
+    // Get a ray for the UVs
+    Ray ray = CreateCameraRay(uv);
+
+    float3 result = float3(0, 0, 0);
+    for (int i = 0; i < 8; i++)
+    {
+        RayHit hit = Trace(ray);
+        result += ray.energy * Shade(ray, hit);
+        if (!any(ray.energy))
+            break;
+    }
+    Result[id.xy] = float4(result, 1);
 }
