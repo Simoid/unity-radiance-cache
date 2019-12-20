@@ -16,7 +16,8 @@ public class RayTracingMaster : MonoBehaviour
     public uint SpheresMax = 100;
     public float SpherePlacementRadius = 100.0f;
     private ComputeBuffer _sphereBuffer;
-    
+    private RenderTexture _converged;
+    public int SphereSeed;
 
 
     struct Sphere
@@ -46,6 +47,8 @@ public class RayTracingMaster : MonoBehaviour
     }
     private void SetUpScene()
     {
+        SphereSeed = 1223832719;
+        Random.InitState(SphereSeed);
         List<Sphere> spheres = new List<Sphere>();
         // Add a number of random spheres
         for (int i = 0; i < SpheresMax; i++)
@@ -64,7 +67,9 @@ public class RayTracingMaster : MonoBehaviour
             }
             // Albedo and specular color
             Color color = Random.ColorHSV();
-            bool metal = Random.value < 0.5f;
+            //bool metal = Random.value < 0.5f;
+            bool metal = Random.value < 0.9f;
+
             sphere.albedo = metal ? Vector3.zero : new Vector3(color.r, color.g, color.b);
             sphere.specular = metal ? new Vector3(color.r, color.g, color.b) : Vector3.one * 0.04f;
             // Add the sphere to the list
@@ -101,6 +106,7 @@ public class RayTracingMaster : MonoBehaviour
         Vector3 l = DirectionalLight.transform.forward;
         RayTracingShader.SetVector("_DirectionalLight", new Vector4(l.x, l.y, l.z, DirectionalLight.intensity));
         RayTracingShader.SetBuffer(0, "_Spheres", _sphereBuffer);
+        RayTracingShader.SetFloat("_Seed", Random.value);
     }
 
     private void OnRenderImage(RenderTexture source, RenderTexture destination)
@@ -124,7 +130,8 @@ public class RayTracingMaster : MonoBehaviour
         if (_addMaterial == null)
             _addMaterial = new Material(Shader.Find("Hidden/AddShader"));
         _addMaterial.SetFloat("_Sample", _currentSample);
-        Graphics.Blit(_target, destination, _addMaterial);
+        Graphics.Blit(_target, _converged, _addMaterial);
+        Graphics.Blit(_converged, destination);
         _currentSample++;
     }
 
@@ -133,15 +140,21 @@ public class RayTracingMaster : MonoBehaviour
         if (_target == null || _target.width != Screen.width || _target.height != Screen.height)
         {
             // Release render texture if we already have one
-            if (_target != null)
+            if (_target != null){
                 _target.Release();
+                _converged.Release();
+            }
 
             // Get a render target for Ray Tracing
             _target = new RenderTexture(Screen.width, Screen.height, 0,
                 RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
+            _converged = new RenderTexture(Screen.width, Screen.height, 0,
+                RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
             _target.enableRandomWrite = true;
+            _converged.enableRandomWrite = true;
             _currentSample = 0;
             _target.Create();
+            _converged.Create();
         }
     }
 }

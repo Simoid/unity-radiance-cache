@@ -36,7 +36,40 @@ struct RayHit
 };
 
 
+float2 _Pixel;
+float _Seed;
 
+float rand()
+{
+    float result = frac(sin(_Seed / 100.0f * dot(_Pixel, float2(12.9898f, 78.233f))) * 43758.5453f);
+    _Seed += 1.0f;
+    return result;
+}
+
+
+float3x3 GetTangentSpace(float3 normal)
+{
+    // Choose a helper vector for the cross product
+    float3 helper = float3(1, 0, 0);
+    if (abs(normal.x) > 0.99f)
+        helper = float3(0, 0, 1);
+    // Generate vectors
+    float3 tangent = normalize(cross(normal, helper));
+    float3 binormal = normalize(cross(normal, tangent));
+    return float3x3(tangent, binormal, normal);
+}
+
+float3 SampleHemisphere(float3 normal)
+{
+    // Uniformly sample hemisphere direction
+    float cosTheta = rand();
+    float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+    float phi = 2 * PI * rand();
+    float3 tangentSpaceDir = float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
+
+    // Transform direction to world space
+    return mul(tangentSpaceDir, GetTangentSpace(normal));
+}
 
 
 RayHit CreateRayHit()
@@ -68,7 +101,7 @@ void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
         bestHit.distance = t;
         bestHit.position = ray.origin + t * ray.direction;
         bestHit.normal = float3(0.0f, 1.0f, 0.0f);
-        bestHit.albedo = float3(0.5f, 0.5f, 0.5f);
+        bestHit.albedo = float3(0.8f, 0.8f, 0.8f);
         bestHit.specular = float3(0.5f, 0.5f, 0.5f);
     }
 }
@@ -119,10 +152,16 @@ Ray CreateCameraRay(float2 uv)
     return CreateRay(origin, direction);
 }
 
+float sdot(float3 x, float3 y, float f = 1.0f)
+{
+    return saturate(dot(x, y) * f);
+}
+
 float3 Shade(inout Ray ray, RayHit hit)
 {
     if (hit.distance < 1.#INF)
     {
+        /*
         float3 specular = hit.specular;
         float3 albedo = hit.albedo;
         // Reflect the ray and multiply energy with specular reflection
@@ -139,6 +178,18 @@ float3 Shade(inout Ray ray, RayHit hit)
             return float3(0.0f, 0.0f, 0.0f);
         }
         return saturate(dot(hit.normal, _DirectionalLight.xyz) * -1) * _DirectionalLight.w * albedo;
+        */ 
+        // Diffuse shading
+        // Phong shading
+        ray.origin = hit.position + hit.normal * 0.001f;
+        float3 reflected = reflect(ray.direction, hit.normal);
+        ray.direction = SampleHemisphere(hit.normal);
+        float3 diffuse = 2 * min(1.0f - hit.specular, hit.albedo);
+        float alpha = 15.0f;
+        float3 specular = hit.specular * (alpha + 2) * pow(sdot(ray.direction, reflected), alpha);
+        ray.energy *= (diffuse + specular) * sdot(hit.normal, ray.direction);
+        return 0.0f;
+
     }
     else
     {
@@ -154,6 +205,8 @@ float3 Shade(inout Ray ray, RayHit hit)
 [numthreads(8,8,1)]
 void CSMain (uint3 id : SV_DispatchThreadID)
 {
+    _Pixel = id.xy;
+
     // Get the dimensions of the RenderTexture
     uint width, height;
     Result.GetDimensions(width, height);

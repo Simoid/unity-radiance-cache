@@ -1,5 +1,9 @@
 Base path: 'G:/Unity/Editor/2019.3.0f3/Editor/Data', plugins path 'G:/Unity/Editor/2019.3.0f3/Editor/Data/PlaybackEngines'
 Cmd: initializeCompiler
 Cmd: compileComputeKernel
-  error: 2 plat 4 at RayTracingShader.compute(11): syntax error: unexpected token 'Sphere'
-  api=4 insize=5044 outsize=0 ok=0
+  error: 2 plat 4 at RayTracingShader.compute(58): undeclared identifier 'GetTangentSpace'
+  api=4 insize=6474 outsize=0 ok=0
+Cmd: compileComputeKernel
+  api=4 insize=6479 outsize=5386 ok=1
+Cmd: compileComputeKernel
+  api=4 insize=6774 outsize=5930 ok=1

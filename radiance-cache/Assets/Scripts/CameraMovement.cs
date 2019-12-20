@@ -9,7 +9,7 @@ public class CameraMovement : MonoBehaviour
     // Start is called before the first frame update
     void Start()
     {
-        
+        Cursor.lockState = CursorLockMode.Locked;
     }
 
     // Update is called once per frame
@@ -22,27 +22,32 @@ public class CameraMovement : MonoBehaviour
         }
 
         if(Input.GetKey(KeyCode.A)){
-            transform.Translate(transform.right * -moveSpeed * mult);
+            transform.Translate(transform.right * -moveSpeed * mult,Space.World);
         }
 
         if(Input.GetKey(KeyCode.W)){
-            transform.Translate(transform.forward * moveSpeed * mult);
+            transform.Translate(transform.forward * moveSpeed * mult,Space.World);
         }
 
         if(Input.GetKey(KeyCode.S)){
-            transform.Translate(transform.forward * -moveSpeed * mult);
+            transform.Translate(transform.forward * -moveSpeed * mult,Space.World);
         }
         
         if(Input.GetKey(KeyCode.D)){
-            transform.Translate(transform.right * moveSpeed * mult);
+            transform.Translate(transform.right * moveSpeed * mult,Space.World);
         }
 
         if(Input.GetKey(KeyCode.Q)){
-            transform.Translate(transform.up * moveSpeed * mult);
+            transform.Translate(transform.up * moveSpeed * mult,Space.World);
         }
         
         if(Input.GetKey(KeyCode.E)){
-            transform.Translate(transform.up * -moveSpeed * mult);
+            transform.Translate(transform.up * -moveSpeed * mult,Space.World);
         }
+
+        float h = Input.GetAxis("Mouse X");
+        float v = Input.GetAxis("Mouse Y");
+        transform.Rotate(-v,0.0f,0.0f, Space.Self);
+        transform.Rotate(0.0f,h,0.0f,Space.World);
     }
 }
