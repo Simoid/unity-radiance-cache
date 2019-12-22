@@ -5,10 +5,10 @@ public class RayTracingObject : MonoBehaviour
 {
     private void OnEnable()
     {
-        //RayTracingMaster.RegisterObject(this);
+        RayTracingMaster.RegisterObject(this);
     }
     private void OnDisable()
     {
-        //RayTracingMaster.UnregisterObject(this);
+        RayTracingMaster.UnregisterObject(this);
     }
 }
