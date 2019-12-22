@@ -1,4 +1,5 @@
 Base path: 'G:/Unity/Editor/2019.3.0f3/Editor/Data', plugins path 'G:/Unity/Editor/2019.3.0f3/Editor/Data/PlaybackEngines'
 Cmd: initializeCompiler
 Cmd: compileComputeKernel
-  api=4 insize=6781 outsize=5970 ok=1
+  error: 2 plat 4 at RayTracingShader.compute(207): 'SampleHemisphere': no matching 1 parameter function
+  api=4 insize=7463 outsize=0 ok=0

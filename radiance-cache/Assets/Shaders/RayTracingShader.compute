@@ -15,6 +15,8 @@ struct Sphere
     float radius;
     float3 albedo;
     float3 specular;
+    float smoothness;
+    float3 emission;
 };
 
 StructuredBuffer<Sphere> _Spheres;
@@ -33,6 +35,8 @@ struct RayHit
     float3 normal;
     float3 albedo;
     float3 specular;
+    float smoothness;
+    float3 emission;
 };
 
 
@@ -59,18 +63,21 @@ float3x3 GetTangentSpace(float3 normal)
     return float3x3(tangent, binormal, normal);
 }
 
-float3 SampleHemisphere(float3 normal)
+float SmoothnessToPhongAlpha(float s)
 {
-    // Uniformly sample hemisphere direction
-    float cosTheta = rand();
-    float sinTheta = sqrt(max(0.0f, 1.0f - cosTheta * cosTheta));
+    return pow(1000.0f, s * s);
+}
+
+float3 SampleHemisphere(float3 normal, float alpha)
+{
+    // Sample the hemisphere, where alpha determines the kind of the sampling
+    float cosTheta = pow(rand(), 1.0f / (alpha + 1.0f));
+    float sinTheta = sqrt(1.0f - cosTheta * cosTheta);
     float phi = 2 * PI * rand();
     float3 tangentSpaceDir = float3(cos(phi) * sinTheta, sin(phi) * sinTheta, cosTheta);
-
     // Transform direction to world space
     return mul(tangentSpaceDir, GetTangentSpace(normal));
 }
-
 
 RayHit CreateRayHit()
 {
@@ -79,7 +86,9 @@ RayHit CreateRayHit()
     hit.distance = 1.#INF;
     hit.normal = float3(0.0f, 0.0f, 0.0f);
     hit.albedo = float3(0.0f, 0.0f, 0.0f);
-    hit.specular = float3(0.0f, 0.0f, 0.0f);;
+    hit.specular = float3(0.0f, 0.0f, 0.0f);
+    hit.smoothness = 0;
+    hit.emission = float3(0.0f, 0.0f, 0.0f);
     return hit;
 }
 
@@ -103,6 +112,9 @@ void IntersectGroundPlane(Ray ray, inout RayHit bestHit)
         bestHit.normal = float3(0.0f, 1.0f, 0.0f);
         bestHit.albedo = float3(0.8f, 0.8f, 0.8f);
         bestHit.specular = float3(0.5f, 0.5f, 0.5f);
+        bestHit.smoothness = 0.5f;
+        bestHit.emission = float3(0.0f,0.0f,0.0f);
+
     }
 }
 
@@ -123,6 +135,8 @@ void IntersectSphere(Ray ray, inout RayHit bestHit, Sphere sphere)
         bestHit.normal = normalize(bestHit.position - sphere.position);
         bestHit.albedo = sphere.albedo;
         bestHit.specular = sphere.specular;
+        bestHit.smoothness = sphere.smoothness;
+        bestHit.emission = sphere.emission;
     }
 }
 
@@ -157,38 +171,41 @@ float sdot(float3 x, float3 y, float f = 1.0f)
     return saturate(dot(x, y) * f);
 }
 
+float energy(float3 color)
+{
+    return dot(color, 1.0f / 3.0f);
+}
+
 float3 Shade(inout Ray ray, RayHit hit)
 {
     if (hit.distance < 1.#INF)
     {
-        /*
-        float3 specular = hit.specular;
-        float3 albedo = hit.albedo;
-        // Reflect the ray and multiply energy with specular reflection
-        ray.origin = hit.position + hit.normal * 0.001f;
-        ray.direction = reflect(ray.direction, hit.normal);
-        ray.energy *= specular;
-        // Return a diffuse-shaded color
-        // Shadow test ray
-        bool shadow = false;
-        Ray shadowRay = CreateRay(hit.position + hit.normal * 0.001f, -1 * _DirectionalLight.xyz);
-        RayHit shadowHit = Trace(shadowRay);
-        if (shadowHit.distance != 1.#INF)
+        // Calculate chances of diffuse and specular reflection
+        hit.albedo = min(1.0f - hit.specular, hit.albedo);
+        float specChance = energy(hit.specular);
+        float diffChance = energy(hit.albedo);
+        float sum = specChance + diffChance;
+        specChance /= sum;
+        diffChance /= sum;
+        // Roulette-select the ray's path
+        float roulette = rand();
+        if (roulette < specChance)
         {
-            return float3(0.0f, 0.0f, 0.0f);
+            // Specular reflection
+            float alpha = SmoothnessToPhongAlpha(hit.smoothness);
+            ray.origin = hit.position + hit.normal * 0.001f;
+            ray.direction = SampleHemisphere(reflect(ray.direction, hit.normal), alpha);
+            float f = (alpha + 2) / (alpha + 1);
+            ray.energy *= (1.0f / specChance) * hit.specular * sdot(hit.normal, ray.direction, f);
         }
-        return saturate(dot(hit.normal, _DirectionalLight.xyz) * -1) * _DirectionalLight.w * albedo;
-        */ 
-        // Diffuse shading
-        // Phong shading
-        ray.origin = hit.position + hit.normal * 0.001f;
-        float3 reflected = reflect(ray.direction, hit.normal);
-        ray.direction = SampleHemisphere(hit.normal);
-        float3 diffuse = 2 * min(1.0f - hit.specular, hit.albedo);
-        float alpha = 15.0f;
-        float3 specular = hit.specular * (alpha + 2) * pow(sdot(ray.direction, reflected), alpha);
-        ray.energy *= (diffuse + specular) * sdot(hit.normal, ray.direction);
-        return 0.0f;
+        else
+        {
+            // Diffuse reflection
+            ray.origin = hit.position + hit.normal * 0.001f;
+            ray.direction = SampleHemisphere(hit.normal, 1.0f);
+            ray.energy *= (1.0f / diffChance) * hit.albedo;
+        }
+        return hit.emission;
 
     }
     else
